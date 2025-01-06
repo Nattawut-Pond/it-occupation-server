@@ -18,17 +18,22 @@ const dbConfig = {
   ssl: {
     rejectUnauthorized: false
   },
-  connectTimeout: 60000
+  connectTimeout: 60000,
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0
 };
 
 let db;
 async function connectDB() {
   try {
-    db = await mysql.createConnection(dbConfig);
-    console.log('Connected to database');
+    // Create a pool instead of a single connection
+    const pool = mysql.createPool(dbConfig);
+    db = pool.promise();
+    console.log('Database pool created successfully');
   } catch (err) {
     console.error('Error connecting to the database:', err);
-    setTimeout(connectDB, 5000);
+    setTimeout(connectDB, 5000); // Try to reconnect every 5 seconds
   }
 }
 
@@ -47,16 +52,19 @@ app.use(cors());
 // Routes
 app.use('/api', userRouter);
 
-app.get('/api/videospath', (req, res) => {
-    const query = 'SELECT video_title, video_path, description, image FROM videospath';
-    db.query(query, (err, result) => {
-        if (err) throw err;
-        if (result.length > 0) {
-            res.json({ results: result }); // Return an array of video objects
+app.get('/api/videospath', async (req, res) => {
+    try {
+        const query = 'SELECT video_title, video_path, description, image FROM videospath';
+        const [results] = await db.query(query);
+        if (results.length > 0) {
+            res.json({ results }); 
         } else {
             res.status(404).send('No videos found.');
         }
-    });
+    } catch (err) {
+        console.error('Error fetching videos:', err);
+        res.status(500).json({ error: 'Database error' });
+    }
 });
 
 app.post('/api/videospath-post', async (req, res) => {
@@ -130,51 +138,51 @@ app.post('/api/form-submissions', async (req, res) => {
     }
 });
 
-app.get('/api/threads', (req, res) => {
-    const query = 'SELECT * FROM threads ORDER BY created_at DESC';
-    db.query(query, (err, result) => {
-        if (err) {
-            console.error('เกิดข้อผิดพลาดในการดึงข้อมูลกระทู้:', err);
-            return res.status(500).send('เกิดข้อผิดพลาด');
-        }
-        res.status(200).json(result);
-    });
+app.get('/api/threads', async (req, res) => {
+    try {
+        const query = 'SELECT * FROM threads ORDER BY created_at DESC';
+        const [results] = await db.query(query);
+        res.status(200).json(results);
+    } catch (err) {
+        console.error('เกิดข้อผิดพลาดในการดึงข้อมูลกระทู้:', err);
+        res.status(500).send('เกิดข้อผิดพลาด');
+    }
 });
 
-app.get('/api/comments/:thread_id', (req, res) => {
-    const { thread_id } = req.params;
-    const query = 'SELECT * FROM comments WHERE thread_id = ? ORDER BY created_at DESC';
-    db.query(query, [thread_id], (err, result) => {
-        if (err) {
-            console.error('เกิดข้อผิดพลาดในการดึงความคิดเห็น:', err);
-            return res.status(500).send('เกิดข้อผิดพลาด');
-        }
-        res.status(200).json(result);
-    });
+app.get('/api/comments/:thread_id', async (req, res) => {
+    try {
+        const { thread_id } = req.params;
+        const query = 'SELECT * FROM comments WHERE thread_id = ? ORDER BY created_at DESC';
+        const [results] = await db.query(query, [thread_id]);
+        res.status(200).json(results);
+    } catch (err) {
+        console.error('เกิดข้อผิดพลาดในการดึงความคิดเห็น:', err);
+        res.status(500).send('เกิดข้อผิดพลาด');
+    }
 });
 
-app.post('/api/threads_post', (req, res) => {
-    const { title, content } = req.body;
-    const query = 'INSERT INTO threads (title, content) VALUES (?, ?)';
-    db.query(query, [title, content], (err, result) => {
-        if (err) {
-            console.error('เกิดข้อผิดพลาดในการบันทึกกระทู้:', err);
-            return res.status(500).send('เกิดข้อผิดพลาด');
-        }
+app.post('/api/threads_post', async (req, res) => {
+    try {
+        const { title, content } = req.body;
+        const query = 'INSERT INTO threads (title, content) VALUES (?, ?)';
+        await db.query(query, [title, content]);
         res.status(201).json({ message: 'กระทู้ถูกสร้างสำเร็จ' });
-    });
+    } catch (err) {
+        console.error('เกิดข้อผิดพลาดในการบันทึกกระทู้:', err);
+        res.status(500).send('เกิดข้อผิดพลาด');
+    }
 });
 
-app.post('/api/comments', (req, res) => {
-    const { thread_id, user_name, comment } = req.body;
-    const query = 'INSERT INTO comments (thread_id, user_name, comment) VALUES (?, ?, ?)';
-    db.query(query, [thread_id, user_name, comment], (err, result) => {
-        if (err) {
-            console.error('เกิดข้อผิดพลาดในการบันทึกความคิดเห็น:', err);
-            return res.status(500).send('เกิดข้อผิดพลาด');
-        }
+app.post('/api/comments', async (req, res) => {
+    try {
+        const { thread_id, user_name, comment } = req.body;
+        const query = 'INSERT INTO comments (thread_id, user_name, comment) VALUES (?, ?, ?)';
+        await db.query(query, [thread_id, user_name, comment]);
         res.status(201).json({ message: 'ความคิดเห็นถูกบันทึกสำเร็จ' });
-    });
+    } catch (err) {
+        console.error('เกิดข้อผิดพลาดในการบันทึกความคิดเห็น:', err);
+        res.status(500).send('เกิดข้อผิดพลาด');
+    }
 });
 
 // Listen
