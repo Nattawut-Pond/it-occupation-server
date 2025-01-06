@@ -1,33 +1,38 @@
 require('dotenv').config()
 const express = require('express');
 const cors = require('cors');
-const mysql = require('mysql2');
+const mysql = require('mysql2/promise');
 const { createRateLimiter } = require('./rateLimit/rateLimit.js');
 
+// setting up express
+const app = express();
+const PORT = process.env.PORT || 3000;
+
 // Database connection
-const db = mysql.createConnection({
+const dbConfig = {
   host: process.env.MYSQLHOST,
   user: process.env.MYSQLUSER,
   password: process.env.MYSQLPASSWORD,
   database: process.env.MYSQLDATABASE,
   port: process.env.MYSQLPORT,
   ssl: {
-    rejectUnauthorized: true
+    rejectUnauthorized: false
   },
-  connectTimeout: 20000
-});
+  connectTimeout: 60000
+};
 
-db.connect((err) => {
-  if (err) {
+let db;
+async function connectDB() {
+  try {
+    db = await mysql.createConnection(dbConfig);
+    console.log('Connected to database');
+  } catch (err) {
     console.error('Error connecting to the database:', err);
-    return;
+    setTimeout(connectDB, 5000);
   }
-  console.log('Connected to database');
-});
+}
 
-// setting up express
-const app = express();
-const PORT = process.env.PORT || 3000;
+connectDB();
 
 // Import 
 const middleWare = require('./Middleware/middleWare.js');
