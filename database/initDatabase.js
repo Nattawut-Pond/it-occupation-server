@@ -6,17 +6,18 @@ const dbConfig = {
   password: process.env.MYSQLPASSWORD,
   database: process.env.MYSQLDATABASE,
   port: process.env.MYSQLPORT,
-  ssl: {
-    rejectUnauthorized: false
-  },
-  connectTimeout: 20000,
+  ssl: true,
+  connectTimeout: 60000,
   waitForConnections: true,
-  connectionLimit: 3,
+  connectionLimit: 1,
+  maxIdle: 1,
+  idleTimeout: 60000,
   queueLimit: 0,
-  multipleStatements: true
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 0
 };
 
-let db;
+let db = null;
 let isConnecting = false;
 let retryCount = 0;
 const MAX_RETRIES = 5;
@@ -33,25 +34,28 @@ async function connectDB() {
 
     console.log('Attempting to connect to database...');
     
+    // Create a new pool
     const pool = mysql.createPool(dbConfig);
     
-    const connection = await pool.getConnection();
+    // Test the connection with a timeout
+    const connection = await Promise.race([
+      pool.getConnection(),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Connection timeout')), 30000)
+      )
+    ]);
+
+    // Test the connection
     await connection.ping();
     connection.release();
     
+    // If we get here, connection is successful
     db = pool;
     console.log('Database connected successfully');
     retryCount = 0;
     isConnecting = false;
     
-    pool.on('error', (err) => {
-      console.error('Database pool error:', err);
-      if (err.code === 'PROTOCOL_CONNECTION_LOST' || err.code === 'ETIMEDOUT') {
-        db = null;
-        setTimeout(connectDB, 5000);
-      }
-    });
-    
+    return db;
   } catch (err) {
     console.error('Error connecting to the database:', err.message);
     isConnecting = false;
@@ -60,7 +64,9 @@ async function connectDB() {
     if (retryCount < MAX_RETRIES) {
       const retryDelay = Math.min(1000 * Math.pow(2, retryCount), 30000);
       console.log(`Retrying connection in ${retryDelay/1000} seconds... (Attempt ${retryCount} of ${MAX_RETRIES})`);
-      setTimeout(connectDB, retryDelay);
+      return new Promise(resolve => {
+        setTimeout(() => resolve(connectDB()), retryDelay);
+      });
     } else {
       console.error('Max retry attempts reached. Please check your database configuration and connectivity.');
       process.exit(1);
@@ -71,21 +77,37 @@ async function connectDB() {
 async function executeQuery(query, params = []) {
   try {
     if (!db) {
-      await connectDB();
+      db = await connectDB();
     }
-    return await db.query(query, params);
+    return await db.execute(query, params);
   } catch (error) {
-    if (error.code === 'PROTOCOL_CONNECTION_LOST' || error.code === 'ETIMEDOUT') {
+    console.error('Query error:', error.message);
+    if (error.code === 'PROTOCOL_CONNECTION_LOST' || 
+        error.code === 'ETIMEDOUT' || 
+        error.code === 'ECONNRESET') {
+      console.log('Connection lost. Attempting to reconnect...');
       db = null;
-      await connectDB();
-      return await db.query(query, params);
+      db = await connectDB();
+      return await db.execute(query, params);
     }
     throw error;
   }
 }
 
 // Initial connection
-connectDB();
+connectDB().catch(err => {
+  console.error('Initial connection failed:', err);
+  process.exit(1);
+});
+
+// Handle process termination
+process.on('SIGINT', async () => {
+  if (db) {
+    console.log('Closing database connection pool...');
+    await db.end();
+  }
+  process.exit(0);
+});
 
 module.exports = {
   executeQuery,
