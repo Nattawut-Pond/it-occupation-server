@@ -1,20 +1,37 @@
 require('dotenv').config()
-
 const express = require('express');
 const cors = require('cors');
+const mysql = require('mysql2');
 const { createRateLimiter } = require('./rateLimit/rateLimit.js');
-// const { databaseConnection } = require('./database/initDatabase.js');   
 
-// databaseConnection();
+// Database connection
+const db = mysql.createConnection({
+  host: process.env.MYSQLHOST,
+  user: process.env.MYSQLUSER,
+  password: process.env.MYSQLPASSWORD,
+  database: process.env.MYSQLDATABASE,
+  port: process.env.MYSQLPORT,
+  ssl: {
+    rejectUnauthorized: true
+  },
+  connectTimeout: 20000
+});
+
+db.connect((err) => {
+  if (err) {
+    console.error('Error connecting to the database:', err);
+    return;
+  }
+  console.log('Connected to database');
+});
+
 // setting up express
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-
 // Import 
 const middleWare = require('./Middleware/middleWare.js');
 const userRouter = require('./routes/userRouter.js');
-
 
 // App use 
 app.use(express.json());
@@ -22,10 +39,8 @@ app.use(middleWare.keepLog);
 app.use(createRateLimiter());
 app.use(cors());
 
-
 // Routes
 app.use('/api', userRouter);
-
 
 app.get('/api/videospath', (req, res) => {
     const query = 'SELECT video_title, video_path, description, image FROM videospath';
@@ -133,7 +148,6 @@ app.get('/api/comments/:thread_id', (req, res) => {
     });
 });
 
-
 app.post('/api/threads_post', (req, res) => {
     const { title, content } = req.body;
     const query = 'INSERT INTO threads (title, content) VALUES (?, ?)';
@@ -158,8 +172,6 @@ app.post('/api/comments', (req, res) => {
     });
 });
 
-
-
 // Listen
 app.listen(PORT, () => {
     console.log('\x1b[31m');
@@ -176,21 +188,3 @@ app.listen(PORT, () => {
                                                                         `);
 
 })
-
-const mysql = require('mysql2');
-
-const db = mysql.createConnection({
-  host: process.env.MYSQLHOST,
-  user: process.env.MYSQLUSER,
-  password: process.env.MYSQLPASSWORD,
-  database: process.env.MYSQLDATABASE,
-  port: process.env.MYSQLPORT
-});
-
-db.connect((err) => {
-  if (err) {
-    console.error('Error connecting to the database:', err);
-    return;
-  }
-  console.log('Connected to database');
-});
