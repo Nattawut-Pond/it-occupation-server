@@ -27,10 +27,12 @@ const dbConfig = {
 let db;
 async function connectDB() {
   try {
-    // Create a pool instead of a single connection
-    const pool = mysql.createPool(dbConfig);
-    db = pool.promise();
-    console.log('Database pool created successfully');
+    // Create a pool that already includes promise support
+    db = mysql.createPool(dbConfig);
+    
+    // Test the connection
+    await db.getConnection();
+    console.log('Database connected successfully');
   } catch (err) {
     console.error('Error connecting to the database:', err);
     setTimeout(connectDB, 5000); // Try to reconnect every 5 seconds
