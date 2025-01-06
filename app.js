@@ -18,28 +18,59 @@ const dbConfig = {
   ssl: {
     rejectUnauthorized: false
   },
-  connectTimeout: 60000,
+  connectTimeout: 30000,
   waitForConnections: true,
   connectionLimit: 10,
-  queueLimit: 0
+  queueLimit: 0,
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 0
 };
 
 let db;
+let retryCount = 0;
+const MAX_RETRIES = 5;
+
 async function connectDB() {
   try {
-    // Create a pool that already includes promise support
+    if (!process.env.MYSQLHOST || !process.env.MYSQLUSER || !process.env.MYSQLPASSWORD || !process.env.MYSQLDATABASE) {
+      throw new Error('Database configuration environment variables are missing');
+    }
+
+    console.log('Attempting to connect to database...');
     db = mysql.createPool(dbConfig);
     
     // Test the connection
-    await db.getConnection();
+    const connection = await db.getConnection();
+    await connection.ping();
+    connection.release();
+    
     console.log('Database connected successfully');
+    retryCount = 0; // Reset retry count on successful connection
   } catch (err) {
-    console.error('Error connecting to the database:', err);
-    setTimeout(connectDB, 5000); // Try to reconnect every 5 seconds
+    console.error('Error connecting to the database:', err.message);
+    retryCount++;
+    
+    if (retryCount < MAX_RETRIES) {
+      const retryDelay = Math.min(1000 * Math.pow(2, retryCount), 30000); // Exponential backoff with max 30s
+      console.log(`Retrying connection in ${retryDelay/1000} seconds... (Attempt ${retryCount} of ${MAX_RETRIES})`);
+      setTimeout(connectDB, retryDelay);
+    } else {
+      console.error('Max retry attempts reached. Please check your database configuration and connectivity.');
+    }
   }
 }
 
+// Initial connection attempt
 connectDB();
+
+// Add connection error handler
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled database error:', err);
+  if (db) {
+    console.log('Attempting to reconnect to database...');
+    connectDB();
+  }
+});
 
 // Import 
 const middleWare = require('./Middleware/middleWare.js');
