@@ -6,7 +6,10 @@ const dbConfig = {
   password: process.env.MYSQLPASSWORD,
   database: process.env.MYSQLDATABASE,
   port: process.env.MYSQLPORT,
-  ssl: true,
+  ssl: {
+    rejectUnauthorized: false,
+    minVersion: 'TLSv1.2'
+  },
   connectTimeout: 60000,
   waitForConnections: true,
   connectionLimit: 1,
