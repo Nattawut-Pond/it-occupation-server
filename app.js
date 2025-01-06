@@ -19,14 +19,9 @@ const dbConfig = {
     rejectUnauthorized: false
   },
   connectTimeout: 60000,
-  acquireTimeout: 60000,
   waitForConnections: true,
   connectionLimit: 5,
-  queueLimit: 0,
-  enableKeepAlive: true,
-  keepAliveInitialDelay: 10000,
-  maxReconnects: 10,
-  timeout: 60000
+  queueLimit: 0
 };
 
 let db;
@@ -42,14 +37,8 @@ async function connectDB() {
     console.log('Attempting to connect to database...');
     db = mysql.createPool(dbConfig);
     
-    // Test the connection with timeout
-    const connection = await Promise.race([
-      db.getConnection(),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Connection timeout')), 30000)
-      )
-    ]);
-    
+    // Test the connection
+    const connection = await db.getConnection();
     await connection.ping();
     connection.release();
     
@@ -82,19 +71,20 @@ process.on('unhandledRejection', (err) => {
   }
 });
 
-// Add periodic ping to keep connection alive
+// Keep connection alive with periodic ping (every 50 seconds)
 setInterval(async () => {
   try {
     if (db) {
       const connection = await db.getConnection();
       await connection.ping();
       connection.release();
+      console.log('Connection ping successful');
     }
   } catch (error) {
     console.error('Ping failed, attempting to reconnect:', error);
     connectDB();
   }
-}, 30000); // Ping every 30 seconds
+}, 50000);
 
 // Import 
 const middleWare = require('./Middleware/middleWare.js');
