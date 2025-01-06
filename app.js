@@ -162,11 +162,11 @@ app.post('/api/videospath-post', async (req, res) => {
 
     try {
         const query = `INSERT INTO videospath (video_title, description, video_path, image) VALUES (?, ?, ?, ?)`;
-        const [result] = await db.query(query, [video_title, video_path, description, image]);
+        const [result] = await executeQuery(query, [video_title, video_path, description, image]);
         res.status(201).json({ message: 'Video added successfully!', videoId: result.insertId });
     } catch (error) {
-        console.error('Error adding video:', error); // Log the error to see the details
-        res.status(500).json({ message: 'Server error.', error: error.message }); // Include error message in response
+        console.error('Error adding video:', error);
+        res.status(500).json({ message: 'Server error.', error: error.message });
     }
 });
 
@@ -175,24 +175,24 @@ app.post('/api/videospath-post', async (req, res) => {
 app.get('/api/form-submission-counts', async (req, res) => {
     try {
         // Query for the count of today's submissions
-        const [todayResult] = await db.promise().query(`
+        const [todayResult] = await executeQuery(`
         SELECT COUNT(*) AS count
         FROM form_submissions
         WHERE DATE(submitted_at) = CURDATE()
-      `);
+        `);
 
         // Query for the count of yesterday's submissions
-        const [yesterdayResult] = await db.promise().query(`
+        const [yesterdayResult] = await executeQuery(`
         SELECT COUNT(*) AS count
         FROM form_submissions
         WHERE DATE(submitted_at) = CURDATE() - INTERVAL 1 DAY
-      `);
+        `);
 
         // Query for the count of all-time submissions
-        const [allTimeResult] = await db.promise().query(`
+        const [allTimeResult] = await executeQuery(`
         SELECT COUNT(*) AS count
         FROM form_submissions
-      `);
+        `);
 
         res.json({
             today: todayResult[0].count,
@@ -211,10 +211,10 @@ app.post('/api/form-submissions', async (req, res) => {
         const { submitted_at } = req.body;
 
         // Insert the submission record with the current timestamp
-        await db.promise().query(`
+        await executeQuery(`
         INSERT INTO form_submissions (submitted_at)
         VALUES (?)
-      `, [submitted_at]);
+        `, [submitted_at]);
 
         res.status(200).json({ message: 'Form submitted successfully' });
     } catch (error) {
@@ -226,7 +226,7 @@ app.post('/api/form-submissions', async (req, res) => {
 app.get('/api/threads', async (req, res) => {
     try {
         const query = 'SELECT * FROM threads ORDER BY created_at DESC';
-        const [results] = await db.query(query);
+        const [results] = await executeQuery(query);
         res.status(200).json(results);
     } catch (err) {
         console.error('เกิดข้อผิดพลาดในการดึงข้อมูลกระทู้:', err);
@@ -238,7 +238,7 @@ app.get('/api/comments/:thread_id', async (req, res) => {
     try {
         const { thread_id } = req.params;
         const query = 'SELECT * FROM comments WHERE thread_id = ? ORDER BY created_at DESC';
-        const [results] = await db.query(query, [thread_id]);
+        const [results] = await executeQuery(query, [thread_id]);
         res.status(200).json(results);
     } catch (err) {
         console.error('เกิดข้อผิดพลาดในการดึงความคิดเห็น:', err);
@@ -250,7 +250,7 @@ app.post('/api/threads_post', async (req, res) => {
     try {
         const { title, content } = req.body;
         const query = 'INSERT INTO threads (title, content) VALUES (?, ?)';
-        await db.query(query, [title, content]);
+        await executeQuery(query, [title, content]);
         res.status(201).json({ message: 'กระทู้ถูกสร้างสำเร็จ' });
     } catch (err) {
         console.error('เกิดข้อผิดพลาดในการบันทึกกระทู้:', err);
@@ -262,7 +262,7 @@ app.post('/api/comments', async (req, res) => {
     try {
         const { thread_id, user_name, comment } = req.body;
         const query = 'INSERT INTO comments (thread_id, user_name, comment) VALUES (?, ?, ?)';
-        await db.query(query, [thread_id, user_name, comment]);
+        await executeQuery(query, [thread_id, user_name, comment]);
         res.status(201).json({ message: 'ความคิดเห็นถูกบันทึกสำเร็จ' });
     } catch (err) {
         console.error('เกิดข้อผิดพลาดในการบันทึกความคิดเห็น:', err);

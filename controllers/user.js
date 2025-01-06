@@ -1,127 +1,99 @@
-const { databaseConnection } = require("../database/initDatabase.js");
+const bcrypt = require('bcrypt');
+const { executeQuery } = require("../database/initDatabase.js");
 
 exports.getUserById = async (request, res) => {
-  const id = request.params.id;
-
-  const connection = databaseConnection();
   try {
-    connection.query(
-      "SELECT * FROM users WHERE id = ?",
-      [id],
-      (error, results) => {
-        if (results.length === 0) {
-          res.json({ message: "Not Fouind" });
-        } else {
-          res.json({
-            message: "find user success",
-            id: request.params.id,
-            results: results,
-          });
-        }
-  
-        if (error) {
-          res.json({ message: error.message, error: error });
-        }
-      }
-    );
+    const id = request.params.id;
+    const [results] = await executeQuery("SELECT * FROM users WHERE id = ?", [id]);
+    
+    if (results.length === 0) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    
+    // Remove sensitive information
+    const user = results[0];
+    delete user.password;
+    
+    res.json({
+      message: "User found successfully",
+      user: user
+    });
   } catch (error) {
-    res.status(500).json({ message: error.message, error: error });
+    console.error('Error fetching user:', error);
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 
 exports.loginUser = async (request, res) => {
-  console.log("loginUser -> request.body", request.body);
-  if (!request.body.email || !request.body.password) {
-    res.json({ message: "Please provide email and password" });
-    return;
-  }
-
-  const { email, password } = request.body;
-  const connection = databaseConnection();
-
   try {
-    connection.query(
-      "SELECT * FROM users WHERE email = ?",
-      [email],
-      (error, results) => {
-        // if ()
-        if (!results || results.length === 0) {
-          setTimeout(() => {
-            res.status(500).json({ message: "ไม่พบผู้ใช้งานนี้ในระบบ" });
-          }, 500);
-        } else {
-          connection.query(
-            "SELECT * FROM users WHERE email = ? AND password = ?",
-            [email, password],
-            (error, results) => {
-              if (!results || results.length === 0) {
-                // res.json({ message: "Not Found" }).status(500);
-                setTimeout(() => {
-                  res.status(500).json({ message: "ไม่พบผู้ใช้งานนี้ในระบบ" });
-                }, 500);
-              } else {
-                setTimeout(() => {
-                  res.json({
-                    message: "Login success",
-                    results: results,
-                  });
-                }, 500);
-              }
-            }
-          );
-        }
-      }
-    );
+    const { email, password } = request.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ message: "Please provide email and password" });
+    }
+
+    // Get user by email
+    const [users] = await executeQuery("SELECT * FROM users WHERE email = ?", [email]);
+    
+    if (users.length === 0) {
+      return res.status(401).json({ message: "Invalid email or password" });
+    }
+
+    const user = users[0];
+    
+    // Compare password
+    const isValidPassword = await bcrypt.compare(password, user.password);
+    
+    if (!isValidPassword) {
+      return res.status(401).json({ message: "Invalid email or password" });
+    }
+
+    // Remove sensitive information
+    delete user.password;
+    
+    res.json({
+      message: "Login successful",
+      user: user
+    });
   } catch (error) {
-    res.status(500).json({ message: error.message, error: error });
+    console.error('Error during login:', error);
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 
 exports.createUser = async (req, res) => {
-  if (
-    !req.body.email ||
-    !req.body.password ||
-    !req.body.lname ||
-    !req.body.fname
-  ) {
-    res.json({ message: "Please provide email and password" });
-    return;
-  }
+  try {
+    const { email, password, lname, fname } = req.body;
 
-  const connection = databaseConnection();
-  const { email, password, lname, fname } = req.body;
-  if (connection) {
-    try {
-      connection.query(
-        "SELECT * FROM users WHERE email = ? AND fname = ? AND lname = ?",
-        [email, fname, lname],
-        (error, results) => {
-          if (results.length === 0) {
-            connection.query(
-              "INSERT INTO users (email, password, lname, fname) VALUES (?, ?, ?, ?)",
-              [email, password, lname, fname],
-              (error, results) => {
-                if (error) {
-                  res.json({ message: error.message, error: error });
-                } else {
-                  setTimeout(() => {
-                    res.json({
-                      message: "Create user success",
-                      userInfo: results,
-                    });
-                  }, 1500);
-                }
-              }
-            );
-          } else {
-            res.json({ message: "มีผู้ใช้แล้ว" });
-          }
-        }
-      );
-    } catch (error) {
-      res.status(500).json({ message: error.message, error: error });
+    if (!email || !password || !lname || !fname) {
+      return res.status(400).json({ message: "All fields are required" });
     }
-  } else {
-    res.json({ message: "Database connection error" });
+
+    // Check if user already exists
+    const [existingUsers] = await executeQuery(
+      "SELECT * FROM users WHERE email = ?",
+      [email]
+    );
+
+    if (existingUsers.length > 0) {
+      return res.status(409).json({ message: "User already exists" });
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Create user
+    const [result] = await executeQuery(
+      "INSERT INTO users (email, password, lname, fname) VALUES (?, ?, ?, ?)",
+      [email, hashedPassword, lname, fname]
+    );
+
+    res.status(201).json({
+      message: "User created successfully",
+      userId: result.insertId
+    });
+  } catch (error) {
+    console.error('Error creating user:', error);
+    res.status(500).json({ message: "Internal server error" });
   }
 };
