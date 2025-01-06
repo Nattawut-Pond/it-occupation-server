@@ -18,55 +18,93 @@ const dbConfig = {
   ssl: {
     rejectUnauthorized: false
   },
-  connectTimeout: 60000,
+  connectTimeout: 20000,
   waitForConnections: true,
-  connectionLimit: 5,
-  queueLimit: 0
+  connectionLimit: 3,
+  queueLimit: 0,
+  multipleStatements: true
 };
 
 let db;
+let isConnecting = false;
 let retryCount = 0;
-const MAX_RETRIES = 10;
+const MAX_RETRIES = 5;
 
 async function connectDB() {
+  if (isConnecting) return;
+  
   try {
+    isConnecting = true;
+    
     if (!process.env.MYSQLHOST || !process.env.MYSQLUSER || !process.env.MYSQLPASSWORD || !process.env.MYSQLDATABASE) {
       throw new Error('Database configuration environment variables are missing');
     }
 
     console.log('Attempting to connect to database...');
-    db = mysql.createPool(dbConfig);
+    
+    // Create a new pool
+    const pool = mysql.createPool(dbConfig);
     
     // Test the connection
-    const connection = await db.getConnection();
+    const connection = await pool.getConnection();
     await connection.ping();
     connection.release();
     
+    // If we get here, connection is successful
+    db = pool;
     console.log('Database connected successfully');
-    retryCount = 0; // Reset retry count on successful connection
+    retryCount = 0;
+    isConnecting = false;
+    
+    // Set up error handler for the pool
+    pool.on('error', (err) => {
+      console.error('Database pool error:', err);
+      if (err.code === 'PROTOCOL_CONNECTION_LOST' || err.code === 'ETIMEDOUT') {
+        db = null;
+        setTimeout(connectDB, 5000);
+      }
+    });
+    
   } catch (err) {
     console.error('Error connecting to the database:', err.message);
+    isConnecting = false;
     retryCount++;
     
     if (retryCount < MAX_RETRIES) {
-      const retryDelay = Math.min(1000 * Math.pow(2, retryCount), 30000); // Exponential backoff with max 30s
+      const retryDelay = Math.min(1000 * Math.pow(2, retryCount), 30000);
       console.log(`Retrying connection in ${retryDelay/1000} seconds... (Attempt ${retryCount} of ${MAX_RETRIES})`);
       setTimeout(connectDB, retryDelay);
     } else {
       console.error('Max retry attempts reached. Please check your database configuration and connectivity.');
+      process.exit(1);
     }
+  }
+}
+
+// Wrapper function for database queries
+async function executeQuery(query, params = []) {
+  try {
+    if (!db) {
+      await connectDB();
+    }
+    return await db.query(query, params);
+  } catch (error) {
+    if (error.code === 'PROTOCOL_CONNECTION_LOST' || error.code === 'ETIMEDOUT') {
+      db = null;
+      await connectDB();
+      return await db.query(query, params);
+    }
+    throw error;
   }
 }
 
 // Initial connection attempt
 connectDB();
 
-// Add connection error handler with reconnection logic
+// Add connection error handler
 process.on('unhandledRejection', (err) => {
   console.error('Unhandled database error:', err);
-  if (db) {
-    console.log('Attempting to reconnect to database...');
-    retryCount = 0; // Reset retry count for new connection attempt
+  if (!isConnecting) {
     connectDB();
   }
 });
@@ -102,7 +140,7 @@ app.use('/api', userRouter);
 app.get('/api/videospath', async (req, res) => {
     try {
         const query = 'SELECT video_title, video_path, description, image FROM videospath';
-        const [results] = await db.query(query);
+        const [results] = await executeQuery(query);
         if (results.length > 0) {
             res.json({ results }); 
         } else {
@@ -124,7 +162,7 @@ app.post('/api/videospath-post', async (req, res) => {
 
     try {
         const query = `INSERT INTO videospath (video_title, description, video_path, image) VALUES (?, ?, ?, ?)`;
-        const [result] = await db.execute(query, [video_title, video_path, description, image]);
+        const [result] = await db.query(query, [video_title, video_path, description, image]);
         res.status(201).json({ message: 'Video added successfully!', videoId: result.insertId });
     } catch (error) {
         console.error('Error adding video:', error); // Log the error to see the details
