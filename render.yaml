@@ -8,7 +8,7 @@ services:
       - key: MYSQLHOST
         value: viaduct.proxy.rlwy.net
       - key: MYSQLPORT
-        value: 3306
+        value: 53594
       - key: MYSQLUSER
         value: root
       - key: MYSQLPASSWORD
