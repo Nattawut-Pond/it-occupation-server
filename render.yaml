@@ -5,5 +5,13 @@ services:
     buildCommand: npm install
     startCommand: node app.js
     envVars:
-      - key: PORT
-        value: 3000 
+      - key: MYSQLHOST
+        value: viaduct.proxy.rlwy.net
+      - key: MYSQLPORT
+        value: 3306
+      - key: MYSQLUSER
+        value: root
+      - key: MYSQLPASSWORD
+        value: SmNGJTkiYEiwOesYWUlsgQSLBrSLutpP
+      - key: MYSQLDATABASE
+        value: railway 
